@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='transformers-re',
-    version='1.0.0',
+    version='1.0.1',
     author='kuangzh',
     author_email='1432245553@qq.com',
     url='https://github.com/kuangkzh/transformers-re',
@@ -16,6 +16,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
+    py_modules=['transformers_re'],
     install_requires=[
         "multiprocess",
         "transformers>=4.0.0",

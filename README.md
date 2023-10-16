@@ -5,6 +5,12 @@ generate following your regex. Using regex in tokens and tensors are also implem
 本项目支持通过正则表达式控制LLMs输出，同时还实现了通过正则表达式抽取token或tensor。
 
 
+## Installation
+```shell script
+pip install transformers-re
+```
+
+
 ### RegexPrefixProcessor
 
 A regex prefix constraint for transformers.
