@@ -11,6 +11,53 @@ pip install transformers-re
 ```
 
 
+### RegexLogitsProcessor
+
+A regex constraint logits processor for transformers.
+
+**\_\_init\_\_**:
+- tokenizer: transformers.Tokenizer
+- prompt: the prompt input into model.
+- pattern: regex pattern.
+- num_proc: the number of processors to process regex match.
+- fail_strategy: default: 'eos'. The strategy when no token can use. It can be:
+    - List[int]: token ids when no token can use.
+    - 'eos': automatically choose the tokenizer.eos_token_id
+- debug: default: False. Control the debug information output.
+
+
+**Attributes**:
+- generated_text(str): Cached text. Generation can be restored from it to prevent running error of regex mismatch
+- match(regex.Match): The Match object of generated text and pattern
+
+**Usage example**:
+
+```python
+>>> with RegexLogitsProcessor(tokenizer, prompt, pattern) as regex_logits_processor:
+>>>   model.generate(logits_processor=[regex_logits_processor])
+```
+
+```python
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers_re import RegexPrefixProcessor
+
+if __name__ == "__main__":
+    tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen-14B-Chat-Int4')
+    model = AutoModelForCausalLM.from_pretrained('Qwen/Qwen-14B-Chat-Int4').eval().to('cuda')  # load your own model
+    prompt = "<|im_start|>user\n请帮我写一首表达思乡之情的诗<|im_end|>\n<|im_start|>assistant\n"
+    pattern = r"一[\u4e00-\u9fa5]{4}，键[\u4e00-\u9fa5]{4}。三[\u4e00-\u9fa5]{4}，连[\u4e00-\u9fa5]{4}。"
+    with RegexLogitsProcessor(tokenizer, prompt, pattern, num_proc=16, debug=True,
+                              fail_strategy=tokenizer.encode("<|im_end|><|endoftext|>")) as regex_logits_processor:
+        input_ids = tokenizer(prompt, return_tensors="pt").to('cuda')["input_ids"]
+        outputs = model.generate(input_ids, max_new_tokens=40, logits_processor=[regex_logits_processor])
+        print(tokenizer.decode(outputs[0]))
+# <|imstart|>user
+# 请帮我写一首表达思乡之情的诗<|im_end|>
+# <|imstart|>assistant
+# 一叶扁舟下，键桥夜月凉。三秋雁南去，连年心自伤。<|im_end|><|endoftext|>
+```
+
+
 ### RegexPrefixProcessor
 
 A regex prefix constraint for transformers.

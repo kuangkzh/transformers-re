@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='transformers-re',
-    version='1.0.1',
+    version='1.1.1',
     author='kuangzh',
     author_email='1432245553@qq.com',
     url='https://github.com/kuangkzh/transformers-re',

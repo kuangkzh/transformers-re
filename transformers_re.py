@@ -82,6 +82,85 @@ class RegexPrefixProcessor:
         return candidates
 
 
+class RegexLogitsProcessor:
+    """
+    A regex prefix constraint for transformers.
+    Usage example:
+    >>> with RegexLogitsProcessor(tokenizer, prompt, pattern) as regex_logits_processor:
+    >>>   model.generate(logits_processor=[regex_logits_processor])
+    Attributes:
+        generated_text(str): Cached text. Generation can be restored from it to prevent running error of regex mismatch
+        match(regex.Match): The Match object of generated text and pattern
+    """
+    def __init__(self, tokenizer, prompt, pattern, num_proc=1, fail_strategy='eos', debug=False):
+        """
+        :param tokenizer: transformers.Tokenizer
+        :param prompt: the prompt input into model.
+        :param pattern: regex pattern.
+        :param num_proc: the number of processors to process regex match.
+        :param fail_strategy: default: 'eos'. The strategy when no token can use. It can be:
+                            - List[int]: token ids when no token can use.
+                            - 'eos': automatically choose the tokenizer.eos_token_id
+        :param debug: default: False. Control the debug information output.
+        """
+        self.tokenizer = tokenizer
+        self.pattern = regex.compile(pattern)
+        self.prompt_token_len = len(tokenizer(prompt)['input_ids'])
+        self.fail_strategy = [tokenizer.eos_token_id] if fail_strategy == 'eos' else fail_strategy
+        self.debug = debug
+        vocab = [(idx, tokenizer.decode(idx)) for _, idx in tokenizer.get_vocab().items()]
+
+        size = len(vocab) + (-len(vocab) % num_proc)  # find the minimum size to be divided by n
+        self.q_in = [multiprocess.Queue() for _ in range(num_proc)]
+        self.q_out = [multiprocess.Queue() for _ in range(num_proc)]
+
+        def regex_service(i):
+            vl = vocab[size // num_proc * i: size // num_proc * (i + 1)]
+
+            def _regex_match():
+                while True:
+                    s = self.q_in[i].get()
+                    self.q_out[i].put([idx for idx, ch in vl if self.pattern.fullmatch(s + ch, partial=True)])
+
+            return _regex_match
+
+        self.process_list = [multiprocess.Process(target=regex_service(i), daemon=True) for i in range(num_proc)]
+
+        self.generated_text = ""
+        self.match = None
+
+    def __enter__(self):
+        [proc.start() for proc in self.process_list]
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        [proc.kill() for proc in self.process_list]
+        [q.close() for q in self.q_in]
+        [q.close() for q in self.q_out]
+        [proc.join() for proc in self.process_list]
+        [proc.close() for proc in self.process_list]
+        if exc_type is not None:
+            warnings.warn("An Exception happened during text generation."
+                          "Set debug=True to track the generation process. \n"
+                          "You can restore your text from RegexPrefixProcessor.generated_text.")
+
+    def __call__(self, input_ids, scores):
+        assert len(input_ids) == 1, "Only generation for batchsize 1 is surpported"
+        self.generated_text = self.tokenizer.decode(input_ids[0, self.prompt_token_len:])
+
+        [q.put(self.generated_text) for q in self.q_in]
+        self.match = self.pattern.match(self.generated_text, partial=True)
+        candidates = sum([q.get() for q in self.q_out], [])
+        candidates = candidates if candidates else self.fail_strategy
+        mask = torch.zeros_like(scores).scatter(1, torch.LongTensor([candidates]).to(scores.device), 1).bool()
+        scores = scores.where(mask, -torch.inf * torch.ones_like(scores))
+
+        if self.debug:
+            candidates_repr = (f"{len(candidates)} tokens" if len(candidates) > 10 else candidates)
+            print(f"generated:{self.generated_text} candidates:{candidates_repr}")
+        return scores
+
+
 def get_token_mapping(tokenizer, s):
     token_ids = tokenizer.encode(s)
     if tokenizer.is_fast:
