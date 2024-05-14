@@ -92,7 +92,7 @@ class RegexLogitsProcessor:
         generated_text(str): Cached text. Generation can be restored from it to prevent running error of regex mismatch
         match(regex.Match): The Match object of generated text and pattern
     """
-    def __init__(self, tokenizer, prompt, pattern, num_proc=1, fail_strategy='eos', debug=False):
+    def __init__(self, tokenizer, prompt, pattern, num_proc=1, fail_strategy='eos', debug=False, guess_token=False):
         """
         :param tokenizer: transformers.Tokenizer
         :param prompt: the prompt input into model.
@@ -102,6 +102,8 @@ class RegexLogitsProcessor:
                             - List[int]: token ids when no token can use.
                             - 'eos': automatically choose the tokenizer.eos_token_id
         :param debug: default: False. Control the debug information output.
+        :param guess_token: default: False. Try to guess the next token to accelerate generating.
+                            Guessing a wrong token will slow down the generation.
         """
         self.tokenizer = tokenizer
         self.pattern = regex.compile(pattern)
@@ -128,6 +130,8 @@ class RegexLogitsProcessor:
 
         self.generated_text = ""
         self.match = None
+        self.is_guess = guess_token
+        self.guess_token = None
 
     def __enter__(self):
         [proc.start() for proc in self.process_list]
@@ -148,12 +152,18 @@ class RegexLogitsProcessor:
         assert len(input_ids) == 1, "Only generation for batchsize 1 is surpported"
         self.generated_text = self.tokenizer.decode(input_ids[0, self.prompt_token_len:])
 
-        [q.put(self.generated_text) for q in self.q_in]
-        self.match = self.pattern.match(self.generated_text, partial=True)
-        candidates = sum([q.get() for q in self.q_out], [])
+        candidates = None if self.guess_token is None else sum([q.get() for q in self.q_out], [])
+        if input_ids[0, -1] != self.guess_token:
+            [q.put(self.generated_text) for q in self.q_in]
+            self.match = self.pattern.match(self.generated_text, partial=True)
+            candidates = sum([q.get() for q in self.q_out], [])
         candidates = candidates if candidates else self.fail_strategy
         mask = torch.zeros_like(scores).scatter(1, torch.LongTensor([candidates]).to(scores.device), 1).bool()
         scores = scores.where(mask, -torch.inf * torch.ones_like(scores))
+
+        if self.is_guess:
+            self.guess_token = scores[0].argmax()
+            [q.put(self.generated_text + self.tokenizer.decode(self.guess_token)) for q in self.q_in]
 
         if self.debug:
             candidates_repr = (f"{len(candidates)} tokens" if len(candidates) > 10 else candidates)
