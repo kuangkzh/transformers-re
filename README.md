@@ -24,6 +24,7 @@ A regex constraint logits processor for transformers.
     - List[int]: token ids when no token can use.
     - 'eos': automatically choose the tokenizer.eos_token_id
 - debug: default: False. Control the debug information output.
+- guess_token: default: False. Try to guess the next token to accelerate generating. Guessing a wrong token will slow down the generation.
 
 
 **Attributes**:
