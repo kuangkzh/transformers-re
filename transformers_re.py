@@ -254,7 +254,13 @@ class TokenizedPattern:
         )
 
     def finditer(self, string, pos=None, endpos=None):
-        pass
+        for match_obj in self.pattern.finditer(string, pos, endpos):
+            yield TokenizedMatch(
+                self.tokenizer,
+                match_obj,
+                strategy=self.strategy,
+                token_mapping_func=self.token_mapping_func
+            )
 
 
 class TokenizedMatch:

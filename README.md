@@ -121,7 +121,7 @@ A regex pattern compiled with a tokenizer and applies to token or tensors.
 **Methods**:
 - match(self, string, pos=None, endpos=None) -> TokenizedMatch
 - search(self, string, pos=None, endpos=None) -> TokenizedMatch
-
+- finditer(self, string, pos=None, endpos=None) -> Iterator[TokenizedMatch]
 
 ### TokenizedMatch
 The regex match result corresponding to a TokenizedPattern and a string.
